@@ -26,6 +26,7 @@ class Level:
         self.levitate = False
 
         self.levels_with_exit_triggered = [0]
+        self.mid_air_jumps_allowed = False
 
         self.font = pygame.font.Font('freesansbold.ttf', 32)
         
@@ -131,6 +132,7 @@ class Level:
             if player.rect.colliderect(midairjumpachievement.rect):
                 self.achievement_sound.play()
                 self.achievement1.remove(self.achievement1.sprite)
+                self.mid_air_jumps_allowed = True
 
     
     def floating_pad_collision(self):
@@ -297,7 +299,7 @@ class Level:
         self.achievement1.draw(self.display_surface)
 
         # player
-        self.player.update()
+        self.player.update(self.mid_air_jumps_allowed)
         self.exit_trigger_collision()
         self.exit_collision()
         self.coin_collision()
@@ -329,7 +331,7 @@ class Player(pygame.sprite.Sprite):
 
         self.jumped = False
     
-    def get_input(self):
+    def get_input(self, allowed):
         keys = pygame.key.get_pressed()
 
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
@@ -340,7 +342,7 @@ class Player(pygame.sprite.Sprite):
             self.direction.x = 0
         
         if keys[pygame.K_SPACE]:
-            self.jump() # arg: false if mid-air jumps not allowed
+            self.jump(allowed) # arg: false if mid-air jumps not allowed
     
     def apply_gravity(self, on=True):
         if on:
@@ -355,8 +357,8 @@ class Player(pygame.sprite.Sprite):
     def lift(self, lift_force):
         self.direction.y = -lift_force
     
-    def update(self):
-        self.get_input()
+    def update(self, allowed):
+        self.get_input(allowed)
 
 class Coin(pygame.sprite.Sprite):
     def __init__(self, x, y, size=16):
