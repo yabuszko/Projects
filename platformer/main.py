@@ -1,6 +1,4 @@
 import pygame
-import time
-from pygame import mixer
 
 from settings import *
 from level import *
@@ -14,25 +12,30 @@ import data_manager
 pygame.init()
 pygame.mixer.init()
 
-done = False
 _data_manager = data_manager.Data_Manager()
 
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Platformer")
 clock = pygame.time.Clock()
 
-level = Level(levels[0], screen, _data_manager)
+level = Level(screen, _data_manager)
 
-keyup = False
-while not done:
+keyup = None
+mousedown = None
+
+while not level.done:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-            done = True
+            level.done = True
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                level.run_menu()
         keyup = True if event.type == pygame.KEYUP else False
+        mousedown = True if event.type == pygame.MOUSEBUTTONDOWN else False
     
     screen.fill('black')
 
-    level.run(keyup)
+    level.run(keyup, mousedown)
 
     pygame.display.update()
     clock.tick(60)
