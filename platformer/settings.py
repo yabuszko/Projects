@@ -1,9 +1,6 @@
-import pygame
-
 MUSIC_VOLUME = 0.5
 WIDTH = 1200
 HEIGHT = 700
-
 
 levels = [
 [
@@ -28,7 +25,7 @@ levels = [
 '            XX       ',
 '    CCC     XX       ',
 '    XXXX   XXXX     ',
-'           XXXXX     ',
+'           XXXXX1    ',
 '  EP      XXXXXXXX  T',
 '  XXXXXXXXXXXXXXXXXXX'
 ],
@@ -41,9 +38,22 @@ levels = [
 '             11    ',
 '           CXXXXC     ',
 '           XXXXXX    ',
-'            XXXX     ',
-'  EP      F XXXX F   T',
-'  XXXXXXXXXXXXXXXXXXXX'],
+'            XXXX      ',
+'  EP      F XXXX F    1       T',
+'  XXXXXXXXXXXXXXXXXXXXX  X  XXX'],
+[
+'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+'X           2                                    X',
+'X    1                                           X',
+'XXXXXXXXXX                                       X',
+'X22222222                                        X',
+'X      C                                         X',
+'XE     C XXXXDX                                  X',
+'X      C X    X                                  X',
+'X      F X   FXFC                                X',
+'XF P   XXXT  XXXXXK CK                           X',
+'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+],
 [
 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
 'X                                                X',
