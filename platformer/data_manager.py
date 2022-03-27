@@ -10,3 +10,8 @@ class Data_Manager:
         
         with open('others/data.txt', 'w') as file:
             json.dump(self.data, file)
+    
+    def load_data(self):
+        with open('others/data.txt') as file:
+            data = json.load(file)
+            return data
