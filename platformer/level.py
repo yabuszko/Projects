@@ -1,4 +1,5 @@
 import pygame
+import json
 from pygame import mixer
 
 from settings import *
@@ -9,13 +10,17 @@ from coin import *
 from achievement import *
 from spike import *
 from button import *
+from level_menu import *
+from background import *
+from door import *
+from key import *
 
 class Level:
-    def __init__(self, level_data, surface, data_man):
+    def __init__(self, surface, data_man):
         self.display_surface = surface
         self.data_man = data_man
 
-        self.lvl_data = level_data
+        self.done = False
 
         ### DOT ###
         self.dot_image = pygame.image.load('art/menu dot.png')
@@ -24,12 +29,26 @@ class Level:
         self.selected_option = 0
         self.moved = False
 
-        self.state_menu = True # false - game, true - in menu
+        self.curr_lvl = 0
+        self.game_state = 'menu' # false - game, true - in menu
 
         ### LEVEL ###
         self.world_shift = 0
-        self.points = 0
-        self.curr_lvl = 0
+
+        self.temp_points = 0 # collected during a level
+        self.keys_collected = 0
+
+        self.data = {
+            'levels_completed': 0,
+            'coins': 0,
+        }
+
+        with open('others/data.txt') as datafile:
+            self.data = json.load(datafile)
+
+        self.curr_lvl = self.data["levels_completed"]
+        self.lvl_data = levels[self.data["levels_completed"]]
+
         self.levitate = False
 
         self.levels_with_exit_triggered = [0]
@@ -39,16 +58,24 @@ class Level:
         
         self.coin_collect_sound = mixer.Sound('sounds/coin sound.wav')
         self.button_press_sound = mixer.Sound('sounds/button.mp3')
+        self.trigger_sound = mixer.Sound('sounds/trigger.mp3')
         self.achievement_sound = mixer.Sound('sounds/achievement.mp3')
+        self.key_sound = mixer.Sound('sounds/key.mp3')
+        self.door_sound = mixer.Sound('sounds/door.mp3')
 
-        self.setup_level(self.lvl_data, 2, True) # TODO: change after saving
+        self.level_tiles = pygame.sprite.Group()
+        self.setup_level_tiles()
+
+        if self.curr_lvl in self.levels_with_exit_triggered:
+            self.setup_level(self.lvl_data, 2, True) # TODO: change after saving, DONE
+        else:
+            self.setup_level(self.lvl_data, 1, True)
 
         mixer.music.load("sounds/music1.mp3")
         mixer.music.set_volume(MUSIC_VOLUME)
         mixer.music.play(-1)
 
     def get_input_dot(self):
-        global done
         keys = pygame.key.get_pressed()
 
         if not self.moved:
@@ -71,21 +98,39 @@ class Level:
             elif keys[pygame.K_RETURN]:
                 self.moved = True
                 if self.selected_option == 0:
-                    self.state_menu = not self.state_menu
+                    self.game_state = 'game'
+                elif self.selected_option == 1:
+                    self.game_state = 'level_menu'
                 elif self.selected_option == 2:
-                    done = True
+                    self.done = True
 
     def update_dot(self):
             self.get_input_dot()
 
-    def setup_level(self, layout, state, player_spawn_higher=False, height=100):
-        # saving data
-        self.data_man.save_data(self.curr_lvl, self.points)
+    def setup_level_tiles(self):
+        self.level_tiles.empty()
 
+        for i in range(self.data["levels_completed"] + 1):
+            self.level_tiles.add(Level_tile((0+100*i, 0), (100, 58), i))
+
+    def setup_level(self, layout, state, spawn_player_higher=False, height=100):
         # basic setup
+        if self.curr_lvl > self.data["levels_completed"]:
+            self.data["levels_completed"] = self.curr_lvl
+        
+        self.keys_collected = 0
+        # saving data
+        self.data_man.save_data(self.data["levels_completed"], self.data["coins"])
+
+        self.setup_level_tiles()
+
         self.menu = pygame.sprite.GroupSingle()
         self.menu.add(Menu((WIDTH / 2 - 114, HEIGHT / 2 - 100))) # size 228x200 px
 
+        self.bckg = pygame.sprite.GroupSingle()
+        self.bckg.add(Background((WIDTH, HEIGHT)))
+
+        # things
         self.bricks = pygame.sprite.Group()
         self.royalblocks = pygame.sprite.Group()
         self.coins = pygame.sprite.Group()
@@ -96,13 +141,17 @@ class Level:
         self.spikesRight = pygame.sprite.Group()
         self.spikesLeft = pygame.sprite.Group()
 
+        self.doors = pygame.sprite.Group()
+        self.keys = pygame.sprite.Group()
+
         self.player = pygame.sprite.GroupSingle() 
         self.exit = pygame.sprite.GroupSingle()
         self.exit_trigger = pygame.sprite.GroupSingle()
 
         self.achievement1 = pygame.sprite.GroupSingle()
 
-        #self.points = 0
+        self.data["coins"] += self.temp_points
+        self.temp_points = 0
 
         # loading level
         for row_index, row in enumerate(layout):
@@ -111,41 +160,34 @@ class Level:
                 y = row_index * tile_size
 
                 if cell == 'X': # block
-                    brick = Brick((x, y), tile_size)
-                    self.bricks.add(brick)
+                    self.bricks.add(Brick((x, y), tile_size))
                 elif cell == 'C': # coin
-                    coin = Coin(x, y)
-                    self.coins.add(coin)
+                    self.coins.add(Coin(x, y))
                 elif cell == 'P': # player
-                    player_sprite = Player((x, y)) if not player_spawn_higher else Player((x, y - height))
+                    player_sprite = Player((x, y)) if not spawn_player_higher else Player((x, y - height))
                     self.player.add(player_sprite)
                 elif cell == 'E': # exit
-                    exit_tile = Exit_tile((x, y), tile_size, state)
-                    self.exit.add(exit_tile)
+                    self.exit.add(Exit_tile((x, y), tile_size, state))
                 elif cell == 'T': # exit trigger
-                    exit_trigger_tile = Exit_trigger_tile((x, y), tile_size)
-                    self.exit_trigger.add(exit_trigger_tile)
+                    self.exit_trigger.add(Exit_trigger_tile((x, y), tile_size))
                 elif cell == 'F': # floating pad
-                    floating_pad = Floating_pad((x, y + tile_size - Floating_pad._height))
-                    self.floating_pads.add(floating_pad)
+                    self.floating_pads.add(Floating_pad((x, y + tile_size - Floating_pad._height)))
                 elif cell == 'R': # royal block
-                    royalblock = RoyalBlock((x, y), tile_size)
-                    self.royalblocks.add(royalblock)
+                    self.royalblocks.add(RoyalBlock((x, y), tile_size))
+                elif cell == 'D': # door
+                    self.doors.add(Door((x, y)))
+                elif cell == 'K':
+                    self.keys.add(Key((x + 16, y + 16)))
                 elif cell == '1': # Spike up
-                    spike = SpikesUp((x, y + tile_size - 32))
-                    self.spikesUp.add(spike)
+                    self.spikesUp.add(SpikesUp((x, y + tile_size - 32)))
                 elif cell == '2': # Spike down
-                    spike = SpikesDown((x, y))
-                    self.spikesDown.add(spike)
+                    self.spikesDown.add(SpikesDown((x, y)))
                 elif cell == '3': # Spike right
-                    spike = SpikesRight((x, y))
-                    self.spikesRight.add(spike)
+                    self.spikesRight.add(SpikesRight((x, y)))
                 elif cell == '4': # spike left
-                    spike = SpikesLeft((x + 32, y))
-                    self.spikesLeft.add(spike)
+                    self.spikesLeft.add(SpikesLeft((x + 32, y)))
                 elif cell == '!': # mid air achievement
-                    achv = Mid_air_jump_achievement((x + 16, y + 16), 16)
-                    self.achievement1.add(achv)
+                    self.achievement1.add(Mid_air_jump_achievement((x + 16, y + 16), 16))
     
     def scroll_x(self):
         player = self.player.sprite
@@ -163,15 +205,32 @@ class Level:
             player.speed = 6
     
     def coin_collision(self):
-        player = self.player.sprite
-
         for coin in self.coins.sprites():
-            if coin.rect.colliderect(player.rect): #if player hits a coin
+            if coin.rect.colliderect(self.player.sprite.rect): #if player hits a coin
                 self.coin_collect_sound.play()
 
                 self.coins.remove(coin)
-                self.points += 1
+                self.temp_points += 1
+                #self.total_points += 1
     
+    def key_collision(self):
+        for key in self.keys.sprites():
+            if key.rect.colliderect(self.player.sprite.rect):
+                self.key_sound.play()
+                self.keys.remove(key)
+
+                self.keys_collected += 1
+                #self.data["keys"] += 1
+    
+    def door_collision(self):
+        for door in self.doors.sprites():
+            if door.rect.colliderect(self.player.sprite.rect):
+                if self.keys_collected > 0:
+                    self.door_sound.play()
+                    self.keys_collected -= 1
+
+                    self.doors.remove(door)
+
     def achievement_collision(self):
         if self.achievement1:
             player = self.player.sprite
@@ -184,10 +243,8 @@ class Level:
 
     
     def floating_pad_collision(self):
-        player = self.player.sprite
-
         for pad in self.floating_pads.sprites():
-            if pad.rect.colliderect(player.rect):
+            if pad.rect.colliderect(self.player.sprite.rect):
                 if not pad.pressed:
                     self.button_press_sound.play()
                     self.levitate = True
@@ -199,97 +256,116 @@ class Level:
 
     def exit_trigger_collision(self):
         if self.exit_trigger: # crash protection
-            player = self.player.sprite
-            exit_trigger_tile = self.exit_trigger.sprite
+            if self.exit_trigger.sprite.rect.colliderect(self.player.sprite.rect):
+                if self.exit.sprite.state == 1: # only once
+                    self.trigger_sound.play()
 
-            if exit_trigger_tile.rect.colliderect(player.rect):
                 self.exit.sprite.state = 2
                 self.unlock_exit()
     
     def exit_collision(self):
         if self.exit:
-            player = self.player.sprite
-            exit_tile = self.exit.sprite
+            if self.exit.sprite.rect.colliderect(self.player.sprite.rect) and self.exit.sprite.state == 2:
+                #self.temp_points = 0
 
-            if exit_tile.rect.colliderect(player.rect) and exit_tile.state == 2:
                 if len(levels) >= self.curr_lvl + 2: # check if out of range
-                    self.curr_lvl += 1
-                    self.setup_level(levels[self.curr_lvl], 1, True) # TODO: change after saving
-
+                    self.curr_lvl += 1            
                     self.lvl_data = levels[self.curr_lvl]
-    
-    def spike_collision(self):
-        player = self.player.sprite
 
+                    self.setup_level(self.lvl_data, 1, True) # TODO: change after saving
+
+    def spike_collision(self):
         for spikeu in self.spikesUp.sprites():
-            if spikeu.rect.colliderect(player.rect):
+            if spikeu.rect.colliderect(self.player.sprite.rect):
                 self.death()
                 #return
         for spiked in self.spikesDown.sprites():
-            if spiked.rect.colliderect(player.rect):
+            if spiked.rect.colliderect(self.player.sprite.rect):
                 self.death()
                 #return
         for spiker in self.spikesRight.sprites():
-            if spiker.rect.colliderect(player.rect):
+            if spiker.rect.colliderect(self.player.sprite.rect):
                 self.death()
                 #return
         for spikel in self.spikesLeft.sprites():
-            if spikel.rect.colliderect(player.rect):
+            if spikel.rect.colliderect(self.player.sprite.rect):
                 self.death()
                 #return
 
     
     def horizontal_movement_collision(self):
-        player = self.player.sprite
-        player.rect.x += player.direction.x * player.speed
+        self.player.sprite.rect.x += self.player.sprite.direction.x * self.player.sprite.speed
 
-        for tile in self.bricks.sprites():
-            if tile.rect.colliderect(player.rect): # then flip
-                if player.direction.x < 0: # moving left
-                    player.rect.left = tile.rect.right
-                elif player.direction.x > 0: # moving right
-                    player.rect.right = tile.rect.left
+        if self.bricks:
+            for brick in self.bricks.sprites():
+                if brick.rect.colliderect(self.player.sprite.rect): # then flip
+                    if self.player.sprite.direction.x < 0: # moving left
+                        self.player.sprite.rect.left = brick.rect.right
+                    elif self.player.sprite.direction.x > 0: # moving right
+                        self.player.sprite.rect.right = brick.rect.left
         
-        for royalblock in self.royalblocks.sprites():
-            if royalblock.rect.colliderect(player.rect): # then flip
-                if player.direction.x < 0: # moving left
-                    player.rect.left = royalblock.rect.right
-                elif player.direction.x > 0: # moving right
-                    player.rect.right = royalblock.rect.left
+        if self.royalblocks:
+            for royalblock in self.royalblocks.sprites():
+                if royalblock.rect.colliderect(self.player.sprite.rect): # then flip
+                    if self.player.sprite.direction.x < 0: # moving left
+                        self.player.sprite.rect.left = royalblock.rect.right
+                    elif self.player.sprite.direction.x > 0: # moving right
+                        self.player.sprite.rect.right = royalblock.rect.left
+        
+        if self.doors and self.keys_collected == 0:
+            for door in self.doors.sprites():
+                if door.rect.colliderect(self.player.sprite.rect): # then flip
+                    if self.player.sprite.direction.x < 0: # moving left
+                        self.player.sprite.rect.left = door.rect.right
+                    elif self.player.sprite.direction.x > 0: # moving right
+                        self.player.sprite.rect.right = door.rect.left
 
     def vertical_movement_collision(self):
-        player = self.player.sprite
-        player.apply_gravity(not self.levitate)
+        self.player.sprite.apply_gravity(not self.levitate)
 
-        for tile in self.bricks.sprites():
-            if tile.rect.colliderect(player.rect): # then flip
-                if player.direction.y > 0: # moving/falling down
-                    player.rect.bottom = tile.rect.top
-                    player.direction.y = 0 # glitch protection
+        if self.bricks:
+            for tile in self.bricks.sprites():
+                if tile.rect.colliderect(self.player.sprite.rect): # then flip
+                    if self.player.sprite.direction.y > 0: # moving/falling down
+                        self.player.sprite.rect.bottom = tile.rect.top
+                        self.player.sprite.direction.y = 0 # glitch protection
 
-                    player.jumped = False # on the ground, allow for jumping
-                elif player.direction.y < 0 or self.levitate: # moving up
-                    player.rect.top = tile.rect.bottom
-                    player.direction.y = 0 # hit a block from below = bounce down
-            
-        for royalblock in self.royalblocks.sprites():
-            if royalblock.rect.colliderect(player.rect): # then flip
-                if player.direction.y > 0: # moving/falling down
-                    player.rect.bottom = royalblock.rect.top
-                    player.direction.y = 0 # glitch protection
+                        self.player.sprite.jumped = False # on the ground, allow for jumping
+                    elif self.player.sprite.direction.y < 0 or self.levitate: # moving up
+                        self.player.sprite.rect.top = tile.rect.bottom
+                        self.player.sprite.direction.y = 0 # hit a block from below = bounce down
 
-                    player.jumped = False # on the ground, allow for jumping
-                elif player.direction.y < 0 or self.levitate: # moving up
-                    player.rect.top = royalblock.rect.bottom
-                    player.direction.y = 0 # hit a block from below = bounce down
+        if self.royalblocks:   
+            for royalblock in self.royalblocks.sprites():
+                if royalblock.rect.colliderect(self.player.sprite.rect): # then flip
+                    if self.player.sprite.direction.y > 0: # moving/falling down
+                        self.player.sprite.rect.bottom = royalblock.rect.top
+                        self.player.sprite.direction.y = 0 # glitch protection
+
+                        self.player.sprite.jumped = False # on the ground, allow for jumping
+                    elif self.player.sprite.direction.y < 0 or self.levitate: # moving up
+                        self.player.sprite.rect.top = royalblock.rect.bottom
+                        self.player.sprite.direction.y = 0 # hit a block from below = bounce down
+        if self.doors and self.keys_collected == 0:
+            for door in self.doors.sprites():
+                if door.rect.colliderect(self.player.sprite.rect): # then flip
+                    if self.player.sprite.direction.y > 0: # moving/falling down
+                        self.player.sprite.rect.bottom = door.rect.top
+                        self.player.sprite.direction.y = 0 # glitch protection
+
+                        self.player.sprite.jumped = False # on the ground, allow for jumping
+                    elif self.player.sprite.direction.y < 0 or self.levitate: # moving up
+                        self.player.sprite.rect.top = door.rect.bottom
+                        self.player.sprite.direction.y = 0 # hit a block from below = bounce down
         
         # if fell down
-        if player.direction.y > 0 and player.rect.bottom > HEIGHT:
+        if self.player.sprite.direction.y > 0 and self.player.sprite.rect.bottom > HEIGHT:
             self.death()
     
     def death(self):
         self.world_shift = 0
-        self.points = 0
+        self.temp_points = 0
+        self.temp_keys = 0
 
         if self.curr_lvl in self.levels_with_exit_triggered:
             self.setup_level(self.lvl_data, 2, True) # false if spawn without fall
@@ -303,7 +379,10 @@ class Level:
         self.exit_trigger.sprite.image = pygame.image.load("art/exit trigger2.png")
         self.exit.sprite.image = pygame.image.load("art/exit2.png")
 
-    def run(self, keyup_):
+    def run_menu(self):
+        self.game_state = 'menu'
+
+    def run(self, keyup_, mousedown_):
         if self.levitate:
             if time.time() - self.timer >= 2:
                 self.levitate = False
@@ -314,15 +393,33 @@ class Level:
         self.scroll_x()
 
         # menu
-        if self.state_menu:
+        if self.game_state == 'menu':
             if keyup_:
                 self.moved = False
             self.update_dot()
 
             self.menu.draw(self.display_surface)
             self.display_surface.blit(self.dot_image, (self.dot_rect.x, self.dot_rect.y))
+        elif self.game_state == 'level_menu':
+            self.level_tiles.update()
+            self.level_tiles.draw(self.display_surface)
 
-        if not self.state_menu:
+            for lvl_tile in self.level_tiles.sprites():
+                if lvl_tile.click_check(mousedown_):
+                    self.temp_points = 0 # prevention
+                    self.temp_keys = 0
+                    
+                    self.curr_lvl = lvl_tile.level
+                    self.lvl_data = levels[self.curr_lvl]
+                    self.game_state = 'game'
+
+                    if lvl_tile.level in self.levels_with_exit_triggered:
+                        self.setup_level(self.lvl_data, 2, True)
+                    else:
+                        self.setup_level(self.lvl_data, 1, True)
+                    
+                    return
+        elif self.game_state == 'game':
             # tiles
             self.bricks.update(self.world_shift)
             self.royalblocks.update(self.world_shift)
@@ -339,6 +436,10 @@ class Level:
             # buttons
             self.floating_pads.update(self.world_shift)
 
+            # doors and keys
+            self.doors.update(self.world_shift)
+            self.keys.update(self.world_shift)
+
             # coins
             self.coins.update(self.world_shift)
 
@@ -350,6 +451,8 @@ class Level:
             self.exit_trigger_collision()
             self.exit_collision()
             self.coin_collision()
+            self.key_collision()
+            self.door_collision()
             self.spike_collision()
             self.floating_pad_collision()
             self.achievement_collision()
@@ -357,6 +460,8 @@ class Level:
             self.vertical_movement_collision()
 
             ###### drawing ######
+            self.bckg.draw(self.display_surface)
+
             self.bricks.draw(self.display_surface)
             self.royalblocks.draw(self.display_surface)
 
@@ -370,15 +475,38 @@ class Level:
 
             self.floating_pads.draw(self.display_surface)
 
+            self.doors.draw(self.display_surface)
+            self.keys.draw(self.display_surface)
+
             self.coins.draw(self.display_surface)
 
             self.achievement1.draw(self.display_surface)
 
             self.player.draw(self.display_surface)
 
+            if self.keys_collected > 0:
+                self.blit_keys(self.keys_collected)
+
             # text
             level_txt = self.font.render("Poziom: " + str(self.curr_lvl + 1), True, 'green')
             self.show_text((0, 0), level_txt)
 
-            score = self.font.render("Punkty: " + str(self.points), True, 'white')
+            score = self.font.render("Punkty: " + str(self.data["coins"] + self.temp_points), True, 'white')
             self.show_text((0, level_txt.get_rect().bottom + 5), score)
+    
+    def blit_keys(self, number):
+        key_image = pygame.image.load('art/key.png')
+
+        x = WIDTH - 37
+        y = 5
+        for i in range(number):
+            self.display_surface.blit(key_image, (x, y))
+            x -= 37
+
+    def clear_data(self):
+        with open('others/data.txt', 'w') as file:
+            self.data = {
+                'levels_completed': 0,
+                'coins': 0
+            }
+            json.dump(self.data, file)
