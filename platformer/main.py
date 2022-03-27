@@ -1,10 +1,17 @@
+from select import select
+from telnetlib import theNULL
 import pygame
 import time
+
 from pygame import mixer
 from settings import *
+import data_manager
 
 pygame.init()
 pygame.mixer.init()
+
+done = False
+_data_manager = data_manager.Data_Manager()
 
 MUSIC_VOLUME = 0.5
 WIDTH = 1200
@@ -14,11 +21,11 @@ pygame.display.set_caption("Platformer")
 clock = pygame.time.Clock()
 
 class Level:
-    def __init__(self, level_data, surface):
+    def __init__(self, level_data, surface, data_man):
         self.display_surface = surface
+        self.data_man = data_man
 
         self.lvl_data = level_data
-        self.setup_level(self.lvl_data, 2, True) # TODO: change after saving
 
         self.world_shift = 0
         self.points = 0
@@ -28,17 +35,29 @@ class Level:
         self.levels_with_exit_triggered = [0]
         self.mid_air_jumps_allowed = False
 
-        self.font = pygame.font.Font('freesansbold.ttf', 32)
+        self.font = pygame.font.Font('others/tahoma.ttf', 32)
         
         self.coin_collect_sound = mixer.Sound('sounds/coin sound.wav')
         self.button_press_sound = mixer.Sound('sounds/button.mp3')
         self.achievement_sound = mixer.Sound('sounds/achievement.mp3')
+
+        self.setup_level(self.lvl_data, 2, True) # TODO: change after saving
 
         mixer.music.load("sounds/music1.mp3")
         mixer.music.set_volume(MUSIC_VOLUME)
         mixer.music.play(-1)
 
     def setup_level(self, layout, state, player_spawn_higher=False, height=100):
+        # saving data
+        self.data_man.save_data(self.curr_lvl, self.points)
+
+        # basic setup
+        self.menu = pygame.sprite.GroupSingle()
+        self.menu.add(Menu((WIDTH / 2 - 114, HEIGHT / 2 - 100))) # size 228x200 px
+
+        self.menu_dot = pygame.sprite.GroupSingle()
+        self.menu_dot.add(MenuDot((WIDTH / 2 - 150, HEIGHT / 2 - 100)))
+
         self.bricks = pygame.sprite.Group()
         self.royalblocks = pygame.sprite.Group()
         self.coins = pygame.sprite.Group()
@@ -57,6 +76,7 @@ class Level:
 
         #self.points = 0
 
+        # loading level
         for row_index, row in enumerate(layout):
             for col_index, cell in enumerate(row):
                 x = col_index * tile_size
@@ -165,8 +185,8 @@ class Level:
 
             if exit_tile.rect.colliderect(player.rect) and exit_tile.state == 2:
                 if len(levels) >= self.curr_lvl + 2: # check if out of range
-                    self.setup_level(levels[self.curr_lvl + 1], 1, True) # TODO: change after saving
                     self.curr_lvl += 1
+                    self.setup_level(levels[self.curr_lvl], 1, True) # TODO: change after saving
 
                     self.lvl_data = levels[self.curr_lvl]
     
@@ -255,7 +275,7 @@ class Level:
         self.exit_trigger.sprite.image = pygame.image.load("art/exit trigger2.png")
         self.exit.sprite.image = pygame.image.load("art/exit2.png")
 
-    def run(self):
+    def run(self, keyup_):
         if self.levitate:
             if time.time() - self.timer >= 2:
                 self.levitate = False
@@ -265,57 +285,123 @@ class Level:
 
         self.scroll_x()
 
-        # tiles
-        self.bricks.update(self.world_shift)
-        self.bricks.draw(self.display_surface)
-        self.royalblocks.update(self.world_shift)
-        self.royalblocks.draw(self.display_surface)
+        # menu
+        if self.menu_dot.sprite.state_menu:
+            if keyup_:
+                self.menu_dot.sprite.moved = False
+            self.menu_dot.update()
 
-        self.exit.update(self.world_shift)
-        self.exit_trigger.update(self.world_shift)
-        self.exit.draw(self.display_surface)
-        self.exit_trigger.draw(self.display_surface)
+            self.menu.draw(self.display_surface)
+            self.menu_dot.draw(self.display_surface)
 
-        #spikes
-        self.spikesUp.update(self.world_shift)
-        self.spikesUp.draw(self.display_surface)
-        self.spikesDown.update(self.world_shift)
-        self.spikesDown.draw(self.display_surface)
-        self.spikesRight.update(self.world_shift)
-        self.spikesRight.draw(self.display_surface)
-        self.spikesLeft.update(self.world_shift)
-        self.spikesLeft.draw(self.display_surface)
+        if not self.menu_dot.sprite.state_menu:
+            # tiles
+            self.bricks.update(self.world_shift)
+            self.royalblocks.update(self.world_shift)
 
-        # buttons
-        self.floating_pads.update(self.world_shift)
-        self.floating_pads.draw(self.display_surface)
+            self.exit.update(self.world_shift)
+            self.exit_trigger.update(self.world_shift)
 
-        # coins
-        self.coins.update(self.world_shift)
-        self.coins.draw(self.display_surface)
+            #spikes
+            self.spikesUp.update(self.world_shift)
+            self.spikesDown.update(self.world_shift)
+            self.spikesRight.update(self.world_shift)
+            self.spikesLeft.update(self.world_shift)
 
-        # achievements
-        self.achievement1.update(self.world_shift)
-        self.achievement1.draw(self.display_surface)
+            # buttons
+            self.floating_pads.update(self.world_shift)
 
-        # player
-        self.player.update(self.mid_air_jumps_allowed)
-        self.exit_trigger_collision()
-        self.exit_collision()
-        self.coin_collision()
-        self.spike_collision()
-        self.floating_pad_collision()
-        self.achievement_collision()
-        self.horizontal_movement_collision()
-        self.vertical_movement_collision()
-        self.player.draw(self.display_surface)
+            # coins
+            self.coins.update(self.world_shift)
 
-        # text
-        level_txt = self.font.render("Poziom: " + str(self.curr_lvl + 1), True, 'green')
-        self.show_text((0, 0), level_txt)
+            # achievements
+            self.achievement1.update(self.world_shift)
 
-        score = self.font.render("Punkty: " + str(self.points), True, 'white')
-        self.show_text((0, level_txt.get_rect().bottom + 5), score)
+            # player
+            self.player.update(self.mid_air_jumps_allowed)
+            self.exit_trigger_collision()
+            self.exit_collision()
+            self.coin_collision()
+            self.spike_collision()
+            self.floating_pad_collision()
+            self.achievement_collision()
+            self.horizontal_movement_collision()
+            self.vertical_movement_collision()
+
+            ###### drawing ######
+            self.bricks.draw(self.display_surface)
+            self.royalblocks.draw(self.display_surface)
+
+            self.exit.draw(self.display_surface)
+            self.exit_trigger.draw(self.display_surface)
+
+            self.spikesUp.draw(self.display_surface)
+            self.spikesDown.draw(self.display_surface)
+            self.spikesRight.draw(self.display_surface)
+            self.spikesLeft.draw(self.display_surface)
+
+            self.floating_pads.draw(self.display_surface)
+
+            self.coins.draw(self.display_surface)
+
+            self.achievement1.draw(self.display_surface)
+
+            self.player.draw(self.display_surface)
+
+            # text
+            level_txt = self.font.render("Poziom: " + str(self.curr_lvl + 1), True, 'green')
+            self.show_text((0, 0), level_txt)
+
+            score = self.font.render("Punkty: " + str(self.points), True, 'white')
+            self.show_text((0, level_txt.get_rect().bottom + 5), score)
+
+class Menu(pygame.sprite.Sprite):
+    def __init__(self, pos):
+        super().__init__()
+        self.image = pygame.image.load('art/menu1.png')
+        self.rect = self.image.get_rect(topleft=pos)
+
+class MenuDot(pygame.sprite.Sprite):
+    def __init__(self, pos):
+        super().__init__()
+        self.image = pygame.image.load('art/menu dot.png')
+        self.rect = self.image.get_rect(topleft=pos)
+
+        self.selected_option = 0
+        self.moved = False
+
+        self.state_menu = True # false - game, true - in menu
+    
+    def get_input(self):
+        global done
+        keys = pygame.key.get_pressed()
+
+        if not self.moved:
+            if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+                self.moved = True
+                if self.selected_option == 2:
+                    self.selected_option = 0
+                    self.rect.y = HEIGHT / 2 - 100
+                else:
+                    self.selected_option += 1
+                    self.rect.y += 75
+            elif keys[pygame.K_UP] or keys[pygame.K_w]:
+                self.moved = True
+                if self.selected_option == 0:
+                    self.selected_option = 2
+                    self.rect.y = HEIGHT / 2 + 50
+                else:
+                    self.selected_option -= 1
+                    self.rect.y -= 75
+            elif keys[pygame.K_RETURN]:
+                self.moved = True
+                if self.selected_option == 0:
+                    self.state_menu = not self.state_menu
+                elif self.selected_option == 2:
+                    done = True
+
+    def update(self):
+        self.get_input()
 
 class Player(pygame.sprite.Sprite):
     def __init__(self, pos):
@@ -507,17 +593,18 @@ class Floating_pad(Button):
         super().__init__(pos)
         self.image = pygame.image.load('art/floating pad.png')
 
-level = Level(levels[0], screen)
+level = Level(levels[0], screen, _data_manager)
 
-done = False
+keyup = False
 while not done:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             done = True
+        keyup = True if event.type == pygame.KEYUP else False
     
     screen.fill('black')
 
-    level.run()
+    level.run(keyup)
 
     pygame.display.update()
     clock.tick(60)
