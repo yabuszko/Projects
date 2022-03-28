@@ -1,5 +1,6 @@
 import pygame
 import json
+import os
 from pygame import mixer
 
 from settings import *
@@ -35,6 +36,9 @@ class Level:
         ### LEVEL ###
         self.world_shift = 0
 
+        self.static_player_pos_x = 6 * tile_size
+        self.player_shift = 0
+
         self.temp_points = 0 # collected during a level
         self.keys_collected = 0
 
@@ -42,6 +46,9 @@ class Level:
             'levels_completed': 0,
             'coins': 0,
         }
+
+        if os.stat('others/data.txt').st_size == 0:
+            self.clear_data()
 
         with open('others/data.txt') as datafile:
             self.data = json.load(datafile)
@@ -58,7 +65,7 @@ class Level:
         
         self.coin_collect_sound = mixer.Sound('sounds/coin sound.wav')
         self.button_press_sound = mixer.Sound('sounds/button.mp3')
-        self.trigger_sound = mixer.Sound('sounds/trigger.mp3')
+        self.death_sound = mixer.Sound('sounds/death.mp3')
         self.achievement_sound = mixer.Sound('sounds/achievement.mp3')
         self.key_sound = mixer.Sound('sounds/key.mp3')
         self.door_sound = mixer.Sound('sounds/door.mp3')
@@ -153,10 +160,16 @@ class Level:
         self.data["coins"] += self.temp_points
         self.temp_points = 0
 
+        for row_index, row in enumerate(layout):
+            for col_index, cell in enumerate(row):
+                if cell == 'P':
+                    self.player_shift = -(col_index * tile_size) + self.static_player_pos_x # -(col*tl - static_x) = -col*tl + static_x
+                    break
+
         # loading level
         for row_index, row in enumerate(layout):
             for col_index, cell in enumerate(row):
-                x = col_index * tile_size
+                x = (col_index * tile_size) + self.player_shift
                 y = row_index * tile_size
 
                 if cell == 'X': # block
@@ -257,9 +270,6 @@ class Level:
     def exit_trigger_collision(self):
         if self.exit_trigger: # crash protection
             if self.exit_trigger.sprite.rect.colliderect(self.player.sprite.rect):
-                if self.exit.sprite.state == 1: # only once
-                    self.trigger_sound.play()
-
                 self.exit.sprite.state = 2
                 self.unlock_exit()
     
@@ -363,6 +373,8 @@ class Level:
             self.death()
     
     def death(self):
+        self.death_sound.play()
+
         self.world_shift = 0
         self.temp_points = 0
         self.temp_keys = 0
