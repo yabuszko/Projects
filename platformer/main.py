@@ -6,9 +6,8 @@ from tile import *
 from player import *
 from coin import *
 from achievement import *
-
+#print(ROOT_DIR)
 import data_manager
-
 pygame.init()
 pygame.mixer.init()
 

@@ -33,4 +33,4 @@ class Button(pygame.sprite.Sprite):
 class Floating_pad(Button):
     def __init__(self, pos):
         super().__init__(pos)
-        self.image = pygame.image.load('art/floating pad.png')
+        self.image = pygame.image.load(os.path.join(ROOT_DIR, 'art', 'floating pad.png'))

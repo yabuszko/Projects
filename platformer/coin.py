@@ -16,6 +16,8 @@ class Coin(pygame.sprite.Sprite):
         self.rect = self.image.get_rect(topleft=self.calculate_pos(x, y))
     
     def calculate_pos(self, x, y):
+        self.x = x
+        self.y = y
         return ((tile_size / 2 + x - self.size / 2), (tile_size / 2 + y - self.size / 2))
     
     def animate(self, factor):
